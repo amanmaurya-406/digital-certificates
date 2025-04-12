@@ -1,3 +1,3 @@
 # pragma once
 
-void generateCA(Info caInfo);
+Certificate *generateCA(Info caInfo);
