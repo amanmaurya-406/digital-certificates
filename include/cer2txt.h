@@ -20,6 +20,14 @@ CSR *load_csr(const char *filename);
 
 
 /**
+ * @brief Frees the CSR structure
+ * 
+ * @param csr pointer to the CSR structure
+ */
+void free_csr(CSR *csr);
+
+
+/**
  * @brief Parses a Certificate in DER format
  *        and stores it in Certificate structure.
  * 
