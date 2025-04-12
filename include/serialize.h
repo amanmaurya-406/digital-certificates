@@ -90,11 +90,11 @@ uint8_t *serialize_CSR(CSR request, size_t *outputLen);
 /**
  * @brief Serializes the complete X.509 certificate.
  * 
- * @param cert Certificate structure with all components populated.
+ * @param cert Pointer to certificate structure with all components populated.
  * @param outputSize Pointer to store the length of the serialized certificate.
  * @return uint8_t* Pointer to the serialized buffer (must be freed by the caller).
  */
-uint8_t *serialize_certificate(Certificate cert, size_t *outputSize);
+uint8_t *serialize_certificate(Certificate *cert, size_t *outputSize);
 
 
 /**
