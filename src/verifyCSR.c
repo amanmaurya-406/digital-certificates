@@ -25,14 +25,14 @@ bool verify_CSRSignature(CSR csr){
 }
 
 // 2. Public Key Verification
-bool verify_rsaPublicKey(PublicKey subPubKey){
-    if(mpz_sizeinbase(subPubKey.modulus, 256) < 2048 / 8){ // 2048 bits
+bool verify_rsaPublicKey(PublicKey *publicKey){
+    if(mpz_sizeinbase(publicKey->modulus, 256) < 2048 / 8){ // 2048 bits
         printf("Modulus size is too small\n");
         return 0;
     }
 
-    if(!(mpz_sizeinbase(subPubKey.exponent, 256) == 3 && !mpz_cmp_ui(subPubKey.exponent, 65537)) && \
-       !(mpz_sizeinbase(subPubKey.exponent, 256) == 1 && !mpz_cmp_ui(subPubKey.exponent, 3))){
+    if(!(mpz_sizeinbase(publicKey->exponent, 256) == 3 && !mpz_cmp_ui(publicKey->exponent, 65537)) && \
+       !(mpz_sizeinbase(publicKey->exponent, 256) == 1 && !mpz_cmp_ui(publicKey->exponent, 3))){
             printf("Unusual exponent\n");
             return 0;
     }
