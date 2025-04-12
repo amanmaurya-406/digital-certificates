@@ -43,7 +43,7 @@ typedef struct {
  * @brief Represents the information of a Certificate Owner.
  */
 typedef struct {
-    char country[3];
+    char country[4];
     char state[50];
     char locality[50];
     char organization[50];
@@ -58,7 +58,7 @@ typedef struct {
  */
 typedef struct {
     int version;
-    Info subject_info;
+    Info subject;
     PublicKey *publicKey;
     Signature *signature;
 } CSR ;
@@ -96,7 +96,7 @@ typedef struct {
     Info issuer;
     Time validFrom;
     Time validTo;
-    Info subject_name;
+    Info subject;
     PublicKey *subject_pubKey;
     // Extensions extensions;                  // Optional certificate extensions  
     Signature *signature;
