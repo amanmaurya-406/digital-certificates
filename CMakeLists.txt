@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(RSAProject C)
+project(DigitalCertificates C)
 
 # Enforce C standard
 set(CMAKE_C_STANDARD 11)
@@ -15,16 +15,16 @@ set(BIN_DIR "${CMAKE_SOURCE_DIR}/bin")
 file(GLOB SRC_FILES "${SRC_DIR}/*.c")
 
 # Create executable target
-add_executable(rsa ${SRC_FILES})
+add_executable(digicer ${SRC_FILES})
 
 # Set runtime data path definition (optional, for locating files at runtime)
-target_compile_definitions(rsa PRIVATE DATA_DIR="${DATA_DIR}")
+target_compile_definitions(digicer PRIVATE DATA_DIR="${DATA_DIR}")
 
 # Include headers from include/
-target_include_directories(rsa PRIVATE ${INCLUDE_DIR})
+target_include_directories(digicer PRIVATE ${INCLUDE_DIR})
 
 # Link necessary external libraries (GMP, OpenSSL)
-target_link_libraries(rsa gmp ssl crypto)
+target_link_libraries(digicer gmp ssl crypto)
 
 # Set output binary location
-set_target_properties(rsa PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${BIN_DIR}")
+set_target_properties(digicer PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${BIN_DIR}")
