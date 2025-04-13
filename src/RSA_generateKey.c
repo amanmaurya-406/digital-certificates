@@ -1,8 +1,9 @@
 #include <stdio.h>
 #include <gmp.h>
 #include <time.h>
-#include "RSA_generateKey.h"
+#include "utils.h"
 #include "encodeKey.h"
+#include "RSA_generateKey.h"
 
 
 static void generate_prime(mpz_t prime, unsigned int bit_size, gmp_randstate_t state){
@@ -17,19 +18,43 @@ static void generate_prime(mpz_t prime, unsigned int bit_size, gmp_randstate_t s
     mpz_clear(random_num);
 }
 
-int generate_RSA_keys(const char *filename){
+static void initialize_random_state(gmp_randstate_t state) {
+    gmp_randinit_mt(state);
+    unsigned long seed = time(NULL);
+    gmp_randseed_ui(state, seed);
+}
+
+static void set_privateKey_components(PrivateKey *privKey, mpz_t n, mpz_t e, mpz_t d, mpz_t p, mpz_t q, mpz_t p_1, mpz_t q_1){
+
+    mpz_set(privKey->n, n);
+    mpz_set(privKey->e, e);
+    mpz_set(privKey->d, d);
+    mpz_set(privKey->p, p);
+    mpz_set(privKey->q, q);
+    mpz_mod(privKey->dmp1, d, p_1);
+    mpz_mod(privKey->dmq1, d, q_1);
+    mpz_invert(privKey->iqmp, q, p);
+
+}
+
+void extract_publicBytes(PublicKey *pubKey, PrivateKey *privKey){
+    if(!privKey && !pubKey){ return; }
+
+    mpz_set(pubKey->n, privKey->n);
+    mpz_set(pubKey->e, privKey->e);
+}
+
+
+int generate_RSA_key(const char *filename){
     mpz_t n, e, d, p, q, p_1, q_1, phi, gcd;
     mpz_inits(n, e, d, p, q, p_1, q_1, phi, gcd, NULL);
     
     gmp_randstate_t state;
-    gmp_randinit_mt(state);
+    initialize_random_state(state);
 
-    unsigned long seed = time(NULL);
-    gmp_randseed_ui(state, seed);
-
-    unsigned int bit_size = 2048;
-    // printf("Enter the Size (<= 4096) of the key to be generated: ");
-    // scanf("%d", &bit_size);
+    unsigned int bit_size;
+    printf("Enter the Size (<= 4096) of the key to be generated: ");
+    scanf("%d", &bit_size);
 
     generate_prime(p, bit_size / 2, state);      // Generate prime number 1
     generate_prime(q, bit_size / 2, state);      // Generate prime number 2
@@ -40,54 +65,26 @@ int generate_RSA_keys(const char *filename){
     mpz_mul(phi, p_1, q_1);                             // phi = p_1 * q_1
 
 
-    /* // Generate random Public Key (e)
-    do{
-        mpz_urandomb(e, state, 16);          // Generate a random 16-bit number for e
-        mpz_gcd(gcd, e, phi);                // Ensure gcd(e, phi) = 1
-    }while(mpz_cmp_ui(e, 1) <= 0 || mpz_cmp(e, phi) >= 0 || mpz_cmp_ui(gcd, 1) != 0); */
+    // public exponent
     mpz_set_str(e, "65537", 10);
     
-    // Generate Private Key (d)
-    if(mpz_invert(d, e, phi) != 0){         // d * e mod phi = 1
-        // write_privateKey(filename, bit_size, pub_exp, priv_exp, modulus);
-        write_privateKey_pem(filename, n, e, d, p, q, p_1, q_1);
+    // private exponent
+    int status = mpz_invert(d, e, phi) != 0;    // d * e mod phi = 1
+
+    PrivateKey *privKey = init_privateKey();
+    if(!privKey) status = 0;
+
+    if(status){
+        set_privateKey_components(privKey, n, e, d, p, q, p_1, q_1);
+        i2d_RSAPrivateKey(filename, privKey);
     }
     else{
         gmp_printf("No modular inverse found. Public key %Zd and phi %Zd are not coprime.\n", e, phi);
     }
     
-    /* gmp_printf("n=%Zd\n", n);
-    gmp_printf("pub exp=%Zd\n", e);
-    gmp_printf("priv exp=%Zd\n", d); */
-    
-    
     mpz_clears(n, e, d, p, q, p_1, q_1, phi, gcd, NULL);
+    free_privateKey(privKey);
     gmp_randclear(state);
 
-    return (mpz_invert(d, e, phi) != 0);
+    return status;
 }
-
-
-/*  multiple leading 1's, strategic 0 placements; cause pattern matching easier, which is not good
-    {
-        mpz_rrandomb(prime, state, bit_size);
-        mpz_setbit(prime, bit_size - 1);    // Ensure it's a large number
-        mpz_setbit(prime, 0);               // Ensure it's odd
-
-        while (!mpz_probab_prime_p(prime, 25))
-            mpz_add_ui(prime, prime, 2);    // Keep trying the next odd number 
-    }
-*/
-/*  p1 (Hex):   0xffffffffffffffffffffffffffffffffffffffffffffffff8
-                0000000000000000000000000000000000000000000000000
-                000000000000000000000000000000000000000000000000000
-                000000000000000000000000000000000000000000000000000
-                000000000000000000000000000000000000000000000000000
-                20789     
-    q1 (Hex):   0xffffffffffffffffffffffe
-                000000000000000000000000000000000000000000000000000
-                0000000000000000000000000000003fffc0000000000000000
-                000000000000000000000000000000000000000000000000000
-                000000000000000000000000000000000000000000000000000
-                00010000000000000000000000065
- */
