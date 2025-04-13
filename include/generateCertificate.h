@@ -3,8 +3,8 @@
 
 #include "config.h"
 
-Certificate *generate_certificate(CSR *csr, Info caInfo, PrivateKey *ca_privKey);
-Certificate *generate_self_signed_certificate(Info caInfo, PrivateKey *ca_privKey);
+Certificate *generate_certificate(CSR *csr, DName *caInfo, PrivateKey *ca_privKey);
+Certificate *generate_self_signed_certificate(DName *caInfo, PrivateKey *ca_privKey);
 void free_certificate(Certificate *cert);
 
 #endif

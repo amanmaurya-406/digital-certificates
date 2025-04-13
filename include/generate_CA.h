@@ -1,3 +1,3 @@
 # pragma once
 
-Certificate *generateCA(Info caInfo);
+Certificate *generateCA(DName *caInfo);
