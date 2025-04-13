@@ -2,7 +2,9 @@
 #include "config.h"
 #include "asn1.h"
 #include "encodeKey.h"
+#include "utils.h"
 #include <math.h>
+
 
 static void write_pem(const char *filename, const char *header, const char *base64_data){
     FILE *file = fopen(filename, "w");
@@ -98,33 +100,24 @@ static char* decode_base64(const char* b64){
 
 
 
-static uint8_t *encode_privateKey_der(size_t *countp, mpz_t modulus, mpz_t pub_exp, 
-        mpz_t priv_exp, mpz_t prime1, mpz_t prime2, mpz_t p_1, mpz_t q_1){
+static uint8_t *encode_privateKey_der(size_t *countp, PrivateKey *privKey){
 
-    uint8_t version_s[] = { 0x02, 0x01, 0x00 };     // Serilaizing version
+    uint8_t version_s[] = { 0x02, 0x01, privKey->version };     // Serilaizing version
     size_t version_size = sizeof(version_s);
 
-    size_t modulus_size, pubExp_size, privExp_size, prime1_size, prime2_size, \
-        exponent1_size, exponent2_size, coefficient_size;
-    
-    mpz_t exponent1, exponent2, coefficient;
-    mpz_inits(exponent1, exponent2, coefficient, NULL);
+    size_t n_size, e_size, d_size, p_size, q_size, dmp1_size, dmq1_size, iqmp_size;
 
-    mpz_mod(exponent1, priv_exp, p_1);
-    mpz_mod(exponent2, priv_exp, q_1);
-    mpz_invert(coefficient, prime2, prime1);
+    uint8_t *n_s    = serialize_mpz(&n_size, privKey->n); 
+    uint8_t *e_s    = serialize_mpz(&e_size, privKey->e);
+    uint8_t *d_s    = serialize_mpz(&d_size, privKey->d);
+    uint8_t *p_s    = serialize_mpz(&p_size, privKey->p);
+    uint8_t *q_s    = serialize_mpz(&q_size, privKey->q);
+    uint8_t *dmp1_s  = serialize_mpz(&dmp1_size, privKey->dmp1);
+    uint8_t *dmq1_s  = serialize_mpz(&dmq1_size, privKey->dmq1);
+    uint8_t *iqmp_s = serialize_mpz(&iqmp_size, privKey->iqmp);
 
-    uint8_t *modulus_s = serialize_mpz(&modulus_size, modulus); 
-    uint8_t *pubExp_s = serialize_mpz(&pubExp_size, pub_exp);
-    uint8_t *privExp_s = serialize_mpz(&privExp_size, priv_exp);
-    uint8_t *prime1_s = serialize_mpz(&prime1_size, prime1);
-    uint8_t *prime2_s = serialize_mpz(&prime2_size, prime2);
-    uint8_t *exponent1_s = serialize_mpz(&exponent1_size, exponent1);
-    uint8_t *exponent2_s = serialize_mpz(&exponent2_size, exponent2);
-    uint8_t *coefficient_s = serialize_mpz(&coefficient_size, coefficient);
-
-    size_t total_size = version_size + modulus_size + pubExp_size + privExp_size + \
-        prime1_size + prime2_size + exponent1_size + exponent2_size + coefficient_size;
+    size_t total_size = version_size + n_size + e_size + d_size + \
+        p_size + q_size + dmp1_size + dmq1_size + iqmp_size;
     uint8_t *total_s = (uint8_t *)malloc(total_size);
     if(!total_s){
         perror("Memory allocation failed\n");
@@ -139,43 +132,45 @@ static uint8_t *encode_privateKey_der(size_t *countp, mpz_t modulus, mpz_t pub_e
         index += val_size;
 
         COLLECT_INDIVIDUAL(version_s, version_size);
-        COLLECT_INDIVIDUAL(modulus_s, modulus_size);
-        COLLECT_INDIVIDUAL(pubExp_s, pubExp_size);
-        COLLECT_INDIVIDUAL(privExp_s, privExp_size);
-        COLLECT_INDIVIDUAL(prime1_s, prime1_size);
-        COLLECT_INDIVIDUAL(prime2_s, prime2_size);
-        COLLECT_INDIVIDUAL(exponent1_s, exponent1_size);
-        COLLECT_INDIVIDUAL(exponent2_s, exponent2_size);
-        COLLECT_INDIVIDUAL(coefficient_s, coefficient_size);
+        COLLECT_INDIVIDUAL(n_s, n_size);
+        COLLECT_INDIVIDUAL(e_s, e_size);
+        COLLECT_INDIVIDUAL(d_s, d_size);
+        COLLECT_INDIVIDUAL(p_s, p_size);
+        COLLECT_INDIVIDUAL(q_s, q_size);
+        COLLECT_INDIVIDUAL(dmp1_s, dmp1_size);
+        COLLECT_INDIVIDUAL(dmq1_s, dmq1_size);
+        COLLECT_INDIVIDUAL(iqmp_s, iqmp_size);
 
     #undef COLLECT_INDIVIDUAL
 
-    uint8_t *buffer = serialize_sequence(countp, total_size, total_s);
+    uint8_t *der = serialize_sequence(countp, total_size, total_s);
 
-    free(modulus_s);
-    free(pubExp_s);
-    free(privExp_s);
-    free(prime1_s);
-    free(prime2_s);
-    free(exponent1_s);
-    free(exponent2_s);
-    free(coefficient_s);
+    free(n_s);
+    free(e_s);
+    free(d_s);
+    free(p_s);
+    free(q_s);
+    free(dmp1_s);
+    free(dmq1_s);
+    free(iqmp_s);
     free(total_s);
-    mpz_clears(exponent1, exponent2, coefficient, NULL);
     
-    return buffer;
+    return der;
 }
 
-void write_privateKey_der(const char *filename, mpz_t modulus, mpz_t pub_exp, 
-    mpz_t priv_exp, mpz_t prime1, mpz_t prime2, mpz_t p_1, mpz_t q_1){
+void i2d_RSAPrivateKey(const char *filename, PrivateKey *privKey){
 
     size_t der_size;
-    uint8_t *der = encode_privateKey_der(&der_size, modulus, pub_exp, priv_exp, prime1, prime2, p_1, q_1);
-    if(!der){ return; }
+    uint8_t *der = encode_privateKey_der(&der_size, privKey);
+    if(!der){ 
+        printf("DER encoding failed.\n");
+        return; 
+    }
 
     FILE *fptr = fopen(filename, "wb");
     if(!fptr){
         perror("Error opening file\n");
+        free(der);
         return;
     }
 
@@ -188,11 +183,10 @@ void write_privateKey_der(const char *filename, mpz_t modulus, mpz_t pub_exp,
     fclose(fptr);
 }
 
-void write_privateKey_pem(const char *filename, mpz_t modulus, mpz_t pub_exp, 
-    mpz_t priv_exp, mpz_t prime1, mpz_t prime2, mpz_t p_1, mpz_t q_1){
+void i2pem_RSAPrivateKey(const char *filename, PrivateKey *privKey){
 
     size_t der_size;
-    uint8_t *der = encode_privateKey_der(&der_size, modulus, pub_exp, priv_exp, prime1, prime2, p_1, q_1);
+    uint8_t *der = encode_privateKey_der(&der_size, privKey);
     if(!der){ return; }
 
     uint8_t *b64 = encode_base64(der, der_size);
@@ -205,8 +199,92 @@ void write_privateKey_pem(const char *filename, mpz_t modulus, mpz_t pub_exp,
 }
 
 
+static size_t read_asn1_len(FILE *fptr){
 
-PrivateKey *load_privateKey(const char *filename){
+    size_t length = 0;
+    
+    uint8_t first_byte;
+    fread(&first_byte, 1, 1, fptr);
+
+    if(first_byte & 0x80){
+        uint8_t len_size = first_byte & 0x7F;
+
+        for(uint8_t j = 0; j < len_size; j++){
+            uint8_t temp;
+            fread(&temp, 1, 1, fptr);
+            length = (length << 8) | temp;
+        }
+    }
+    else{
+        length = first_byte;
+    }
+
+    return length;
+}
+
+static int deserialize_int(uint8_t *buffer, int len){
+    int value = 0;
+    for(int i = 0; i < len; i++){
+        value = (value << 8) | buffer[i];
+    }
+    return value;
+}
+
+# define ASN1_SEQUENCE (MY_ASN1_SEQUENCE | 0x20)
+
+int handle_privateKey_components(PrivateKey *privKey, mpz_t **fields, int con, FILE *fptr, size_t len){
+
+    uint8_t buffer[len];
+    if(fread(buffer, 1, len, fptr) != len)
+        return 0;
+
+    if(con == 0){
+        privKey->version = deserialize_int(buffer, len);
+    }
+    else if(con >= 1 && con <= 8){
+        mpz_import(*fields[con - 1], len, 1, 1, 0, 0, buffer);
+    }
+
+    return 1;
+}
+
+PrivateKey *d2i_RSAPrivateKey(const char *filename){
+    FILE *fptr = fopen(filename, "rb");
+    if(!fptr){
+        perror("Error opening Key file");
+        return NULL;
+    }
+    
+    PrivateKey *privKey = init_privateKey();
+    if(!privKey){ return NULL; }
+ 
+    mpz_t *fields[] = {
+        &privKey->n,
+        &privKey->e,
+        &privKey->d,
+        &privKey->p,
+        &privKey->q,
+        &privKey->dmp1,
+        &privKey->dmq1,
+        &privKey->iqmp
+    };
+
+    int con = 0;
+    while(!feof(fptr)){
+        uint8_t ASN1_TAG;
+        if(fread(&ASN1_TAG, 1, 1, fptr) != 1)
+            break;
+
+        size_t len = read_asn1_len(fptr);
+        
+        if(ASN1_TAG != ASN1_SEQUENCE)         
+            handle_privateKey_components(privKey, fields, con++, fptr, len);
+    }
+
+    return privKey;
+}
+
+PrivateKey *pem2txt_RSAPrivateKey(const char *filename){
 
     char *b64 = read_pem(filename);
     if(!b64){ return NULL; }
@@ -222,84 +300,64 @@ PrivateKey *load_privateKey(const char *filename){
     int version;
     idx += deserialize_integer(&version, der + idx);
     
-    PrivateKey *privateKey = (PrivateKey *)malloc(sizeof(PrivateKey));
-    if(!privateKey){
-        perror("Memory allocation failed");
+    PrivateKey *privKey = init_privateKey();
+    if(!privKey){ return NULL; }
+    
+    idx += deserialize_mpz(privKey->n, der + idx);
+    idx += deserialize_mpz(privKey->e, der + idx);
+    idx += deserialize_mpz(privKey->d, der + idx);
+    idx += deserialize_mpz(privKey->p, der + idx);
+    idx += deserialize_mpz(privKey->q, der + idx);
+    idx += deserialize_mpz(privKey->dmp1, der + idx);
+    idx += deserialize_mpz(privKey->dmq1, der + idx);
+    idx += deserialize_mpz(privKey->iqmp, der + idx);
+
+    return privKey;
+}
+
+static void handle_components(PublicKey *pubKey, uint8_t *buffer, size_t len, int sec){
+    switch(sec){
+        case 2 : {
+            int version = deserialize_int(buffer, len);
+            break;
+        }
+
+        case 3 : {
+            mpz_import(pubKey->n, len, 1, 1, 0, 0, buffer);
+            break;
+        }
+
+        case 4 : {
+            mpz_import(pubKey->e, len, 1, 1, 0, 0, buffer);
+            break;
+        }
+    }
+}
+
+PublicKey *d2i_RSAPublicKey(const char *filename){
+    FILE *fptr = fopen(filename, "rb");
+    if(!fptr){
+        perror("Error opening input file");
         return NULL;
     }
 
-    mpz_inits(privateKey->modulus, privateKey->pub_exp, privateKey->priv_exp, 
-              privateKey->p, privateKey->q, privateKey->dmp1, 
-              privateKey->dmq1, privateKey->iqmp, NULL);
-    
-    idx += deserialize_mpz(privateKey->modulus, der + idx);
-    idx += deserialize_mpz(privateKey->pub_exp, der + idx);
-    idx += deserialize_mpz(privateKey->priv_exp, der + idx);
-    idx += deserialize_mpz(privateKey->p, der + idx);
-    idx += deserialize_mpz(privateKey->q, der + idx);
-    idx += deserialize_mpz(privateKey->dmp1, der + idx);
-    idx += deserialize_mpz(privateKey->dmq1, der + idx);
-    idx += deserialize_mpz(privateKey->iqmp, der + idx);
+    PublicKey *pubKey = init_publicKey();
+    if(!pubKey){ return NULL; }
 
-    return privateKey;
-}
+    int sec = 0;
+    while(sec++ < 4){
+        uint8_t tag;
+        fread(&tag, 1, 1, fptr);
+        size_t len = read_asn1_len(fptr);
 
-PublicKey *load_publicBytes(const char *filename){
-    char *b64 = read_pem(filename);
-    if(!b64){ return NULL; }
+        if(tag == ASN1_SEQUENCE){ continue; }
 
-    char *der = decode_base64(b64);
-    free(b64);
-    if(!der){ return NULL; };
-
-    int idx = 0;
-    /* printf("Sequence tag = [0x%02x]\n", */ idx++;
-    read_asn1_length(der, &idx);
-
-    int version;
-    idx += deserialize_integer(&version, der + idx);
-
-    PublicKey *publicKey = (PublicKey *)malloc(sizeof(PublicKey));
-    if(!publicKey){
-        perror("Memory allocation failed");
-        return NULL;
-    }
-
-    mpz_inits(publicKey->modulus, publicKey->exponent, NULL);
-
-    idx += deserialize_mpz(publicKey->modulus, der + idx);
-    idx += deserialize_mpz(publicKey->exponent, der + idx);
-
-    free(der);
-    return publicKey;
-}
-
-PublicKey *extract_publicBytes(PrivateKey *privateKey){
-
-    PublicKey *publicKey = (PublicKey *)malloc(sizeof(PublicKey));
-    if(!publicKey){
-        perror("Memory allocation failed");
-        return NULL;
+        uint8_t buffer[len];
+        fread(buffer, 1, len, fptr);
+        handle_components(pubKey, buffer, len, sec);
     }
     
-    mpz_inits(publicKey->modulus, publicKey->exponent, NULL);
-    
-    mpz_set(publicKey->modulus, privateKey->modulus);
-    mpz_set(publicKey->exponent, privateKey->pub_exp);
-    
-    return publicKey;
+    fclose(fptr);
+    return pubKey;
 }
 
-void free_publicKey(PublicKey *publicKey){
-    mpz_clears(publicKey->modulus, publicKey->exponent, NULL);
-    
-    free(publicKey);
-}
-
-void free_privateKey(PrivateKey *privateKey){
-    mpz_clears(privateKey->modulus, privateKey->pub_exp, privateKey->priv_exp, NULL);
-    mpz_clears(privateKey->p, privateKey->q, privateKey->dmp1, NULL);
-    mpz_clears(privateKey->dmq1, privateKey->iqmp, NULL);
-
-    free(privateKey);
-}
