@@ -7,10 +7,11 @@
  * @struct Private Key
  * @brief Represents a Private Key structure.
  */
-typedef struct {
-    mpz_t modulus;      // n
-    mpz_t pub_exp;      // e
-    mpz_t priv_exp;     // d
+typedef struct privkey_st {
+    int version;
+    mpz_t n;
+    mpz_t e;
+    mpz_t d;
     mpz_t p;
     mpz_t q;
     mpz_t dmp1;
@@ -22,84 +23,75 @@ typedef struct {
  * @struct Public Key
  * @brief Represents the Public Key information.
  */
-typedef struct {
-    char algorithmIdentifier[50];
-    int keyBit;
-    mpz_t exponent;
-    mpz_t modulus;
+typedef struct pubkey_st {
+    mpz_t n;
+    mpz_t e;
 } PublicKey ;
 
-/**
- * @struct Signature
- * @brief Represents Signature of a Certificate Signing Request (CSR).
- */
-typedef struct {
-    char algorithmIdentifier[50];
-    mpz_t value;
-} Signature ;
 
 /**
  * @struct Info
  * @brief Represents the information of a Certificate Owner.
  */
-typedef struct {
+typedef struct dname_st {
     char country[4];
     char state[50];
-    char locality[50];
-    char organization[50];
-    // char organisationUnit[50];
-    char common_name[50];          /** Common name (e.g., domain name). */
-} Info ;
+    char city[50];
+    char org[50];
+    char unit[50];
+    char name[50];
+} DName ;
+
+typedef struct pubKeyInfo_st {
+    char *pubKeyAlgo;
+    PublicKey *pubKey;
+} PKeyInfo ;
+
+typedef struct csrInfo_st {
+    int version;
+    DName *subject;
+    PKeyInfo *pKeyInfo;
+} CSRInfo ;
 
 
 /**
  * @struct CSR
  * @brief Represents a Certificate Signing Request (CSR).
  */
-typedef struct {
-    int version;
-    Info subject;
-    PublicKey *publicKey;
-    Signature *signature;
+typedef struct csr_st {
+    CSRInfo *csrInfo;
+    char *signatureAlgo;
+    mpz_t signature;
 } CSR ;
 
 
 /**
  * @struct Time
  */
-typedef struct {
+typedef struct time_st {
     int year, month, day;
     int hour, minute, second;
 } Time ;
 
-/**
- * @struct Certificate
- * @brief Represents the structure of an X.509 v3 digital certificate.
- * 
- * The structure of an X.509 v3 digital certificate includes several fields necessary
- * for identification, validation, and authentication of entities.
- *
- * @param version             The version of the certificate (e.g., X.509 v3).
- * @param serialNumber        The serial number of the certificate, used to uniquely identify it.
- * @param subSignAlgorithm    The signature algorithm intended for use with the Subject's public key.
- * @param issuer              The name of the entity issuing the certificate (e.g., CA).
- * @param validFrom           The start of the certificate's validity period (Not Before).
- * @param validTo             The end of the certificate's validity period (Not After).
- * @param subject             The name of the entity to which the certificate is issued.
- * @param subPubKey           The subject's public key information.
- * @param signature           The digital signature.
- */
-typedef struct {
+typedef struct validity_st {
+    Time *validFrom;
+    Time *validTo;
+} Validity ;
+
+typedef struct tbsCert_st {
     int version;
     mpz_t serialNumber;
-    char subject_signAlgorithm[50];
-    Info issuer;
-    Time validFrom;
-    Time validTo;
-    Info subject;
-    PublicKey *subject_pubKey;
-    // Extensions extensions;                  // Optional certificate extensions  
-    Signature *signature;
+    char *signatureAlgo;
+    DName *issuer;
+    Validity *validity;
+    DName *subject;
+    PKeyInfo *pKeyInfo;
+} TBSCertificate ;
+
+typedef struct cert_st {
+    TBSCertificate *tbsCert;
+    char *signatureAlgo;
+    mpz_t signature;
 } Certificate ;
 
 
