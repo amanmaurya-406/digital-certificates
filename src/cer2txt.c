@@ -1,24 +1,25 @@
 #include "common.h"
 #include "cer2txt.h"
+#include "utils.h"
 
 #define ASN1_SEQUENCE   0x30
 
 
 bool write_cer_file(const char *filename, size_t data_size, uint8_t *data){
 
-    FILE *file = fopen(filename, "wb");
-    if(file == NULL){
+    FILE *fptr = fopen(filename, "wb");
+    if(fptr == NULL){
         perror("Error opening file");
         return 0;
     }
 
-    size_t bytesWritten = fwrite(data, 1, data_size, file);
+    size_t bytesWritten = fwrite(data, 1, data_size, fptr);
     if(bytesWritten != data_size){
         perror("Full data is not written");
         return 0;
     }
 
-    fclose(file);
+    fclose(fptr);
     return 1;
 }
 
@@ -83,17 +84,18 @@ static int deserialize_int(uint8_t *buffer, int len){
 static void handle_csrInfo(CSR *csr, uint8_t con, uint8_t *temp, size_t len){
     switch(con){
         case 0 :
-            csr->version = deserialize_int(temp, len);
+            csr->csrInfo->version = deserialize_int(temp, len);
             break;
 
         // Subject fields
-        case 1: case 2: case 3: case 4: case 5: {
+        case 1: case 2: case 3: case 4: case 5: case 6: {
             char *fields[] = {
-                csr->subject.country,
-                csr->subject.state,
-                csr->subject.locality,
-                csr->subject.organization,
-                csr->subject.common_name
+                csr->csrInfo->subject->country,
+                csr->csrInfo->subject->state,
+                csr->csrInfo->subject->city,
+                csr->csrInfo->subject->org,
+                csr->csrInfo->subject->unit,
+                csr->csrInfo->subject->name
             };
             memcpy(fields[con - 1], temp, len);
             fields[con - 1][len] = '\0';
@@ -101,36 +103,29 @@ static void handle_csrInfo(CSR *csr, uint8_t con, uint8_t *temp, size_t len){
         } 
 
         // Subject Public key
-        case 6 :
-            csr->publicKey = (PublicKey *)malloc(sizeof(PublicKey));
-            memcpy(csr->publicKey->algorithmIdentifier, temp, len);
-            csr->publicKey->algorithmIdentifier[len] = '\0';
-            break;
         case 7 :
-            csr->publicKey->keyBit = deserialize_int(temp, len);
+            csr->csrInfo->pKeyInfo->pubKeyAlgo = malloc(len + 1);
+            memcpy(csr->csrInfo->pKeyInfo->pubKeyAlgo, temp, len);
+            csr->csrInfo->pKeyInfo->pubKeyAlgo[len] = '\0';
             break;
         case 8 :
-            mpz_init(csr->publicKey->modulus);
-            mpz_import(csr->publicKey->modulus, len, 1, 1, 0, 0, temp);
+            mpz_import(csr->csrInfo->pKeyInfo->pubKey->n, len, 1, 1, 0, 0, temp);
             break;
         case 9 :
-            mpz_init(csr->publicKey->exponent);
-            mpz_import(csr->publicKey->exponent, len, 1, 1, 0, 0, temp);
+            mpz_import(csr->csrInfo->pKeyInfo->pubKey->e, len, 1, 1, 0, 0, temp);
             break;
 
         // Signature
         case 10 :
-            csr->signature = (Signature *)malloc(sizeof(Signature));
-            memcpy(csr->signature->algorithmIdentifier, temp, len);
-            csr->signature->algorithmIdentifier[len] = '\0';
+            csr->signatureAlgo = malloc(len + 1);
+            memcpy(csr->signatureAlgo, temp, len);
+            csr->signatureAlgo[len] = '\0';
             break;
         case 11 :
-            mpz_init(csr->signature->value);
-            mpz_import(csr->signature->value, len, 1, 1, 0, 0, temp);
+            mpz_import(csr->signature, len, 1, 1, 0, 0, temp);
             break;
     }
 }
-
 
 CSR *load_csr(const char *filename){
 
@@ -140,9 +135,9 @@ CSR *load_csr(const char *filename){
         return NULL;
     }
 
-    CSR *csr = (CSR *)malloc(sizeof(CSR));
-    if(!csr){
-        perror("Memory allocation failed");
+    CSR *csr = init_csr();
+    if(!csr){ 
+        fclose(fptr);
         return NULL;
     }
 
@@ -165,36 +160,28 @@ CSR *load_csr(const char *filename){
     return csr;
 }
 
-void free_csr(CSR *csr){
-    mpz_clears(csr->publicKey->exponent, csr->publicKey->modulus, NULL);
-    mpz_clear(csr->signature->value);
-    free(csr->publicKey);
-    free(csr->signature);
-    free(csr);
-}
-
 
 static void handle_certInfo(Certificate *cert, uint8_t con, uint8_t *temp, size_t len){
     switch(con){
         case 0:
-            cert->version = deserialize_int(temp, len);
+            cert->tbsCert->version = deserialize_int(temp, len);
             break;
         
         case 1:
-            mpz_init(cert->serialNumber);
-            mpz_import(cert->serialNumber, len, 1, 1, 0, 0, temp);
+            mpz_import(cert->tbsCert->serialNumber, len, 1, 1, 0, 0, temp);
             break;
 
         case 2:
-            memcpy(cert->subject_signAlgorithm, temp, len);
-            cert->subject_signAlgorithm[len] = '\0';
+            cert->tbsCert->signatureAlgo = malloc(len + 1);
+            memcpy(cert->tbsCert->signatureAlgo, temp, len);
+            cert->tbsCert->signatureAlgo[len] = '\0';
             break;
 
         // Issuer fields
         case 3: case 4: {
             char *fields[] = {
-                cert->issuer.country,
-                cert->issuer.organization
+                cert->tbsCert->issuer->country,
+                cert->tbsCert->issuer->org
             };
             memcpy(fields[con - 3], temp, len);
             fields[con - 3][len] = '\0';
@@ -202,29 +189,30 @@ static void handle_certInfo(Certificate *cert, uint8_t con, uint8_t *temp, size_
         }
 
         // Valid From
-        case 5:  cert->validFrom.year   = deserialize_int(temp, len); break;
-        case 6:  cert->validFrom.month  = deserialize_int(temp, len); break;
-        case 7:  cert->validFrom.day    = deserialize_int(temp, len); break;
-        case 8:  cert->validFrom.hour   = deserialize_int(temp, len); break;
-        case 9:  cert->validFrom.minute = deserialize_int(temp, len); break;
-        case 10: cert->validFrom.second = deserialize_int(temp, len); break;
+        case 5:  cert->tbsCert->validity->validFrom->year   = deserialize_int(temp, len); break;
+        case 6:  cert->tbsCert->validity->validFrom->month  = deserialize_int(temp, len); break;
+        case 7:  cert->tbsCert->validity->validFrom->day    = deserialize_int(temp, len); break;
+        case 8:  cert->tbsCert->validity->validFrom->hour   = deserialize_int(temp, len); break;
+        case 9:  cert->tbsCert->validity->validFrom->minute = deserialize_int(temp, len); break;
+        case 10: cert->tbsCert->validity->validFrom->second = deserialize_int(temp, len); break;
 
         // Valid To
-        case 11: cert->validTo.year     = deserialize_int(temp, len); break;
-        case 12: cert->validTo.month    = deserialize_int(temp, len); break;
-        case 13: cert->validTo.day      = deserialize_int(temp, len); break;
-        case 14: cert->validTo.hour     = deserialize_int(temp, len); break;
-        case 15: cert->validTo.minute   = deserialize_int(temp, len); break;
-        case 16: cert->validTo.second   = deserialize_int(temp, len); break;
+        case 11: cert->tbsCert->validity->validTo->year     = deserialize_int(temp, len); break;
+        case 12: cert->tbsCert->validity->validTo->month    = deserialize_int(temp, len); break;
+        case 13: cert->tbsCert->validity->validTo->day      = deserialize_int(temp, len); break;
+        case 14: cert->tbsCert->validity->validTo->hour     = deserialize_int(temp, len); break;
+        case 15: cert->tbsCert->validity->validTo->minute   = deserialize_int(temp, len); break;
+        case 16: cert->tbsCert->validity->validTo->second   = deserialize_int(temp, len); break;
 
         // Subject fields
-        case 17: case 18: case 19: case 20: case 21: {
+        case 17: case 18: case 19: case 20: case 21: case 22: {
             char *fields[] = {
-                cert->subject.country,
-                cert->subject.state,
-                cert->subject.locality,
-                cert->subject.organization,
-                cert->subject.common_name
+                cert->tbsCert->subject->country,
+                cert->tbsCert->subject->state,
+                cert->tbsCert->subject->city,
+                cert->tbsCert->subject->org,
+                cert->tbsCert->subject->unit,
+                cert->tbsCert->subject->name
             };
             memcpy(fields[con - 17], temp, len);
             fields[con - 17][len] = '\0';
@@ -232,41 +220,27 @@ static void handle_certInfo(Certificate *cert, uint8_t con, uint8_t *temp, size_
         }
 
         // Subject Public Key
-        case 22 :
-            cert->subject_pubKey = (PublicKey *)malloc(sizeof(PublicKey));
-            if(!cert->subject_pubKey){
-                perror("Memory allocation failed for PublicKey");
-                exit(EXIT_FAILURE);
-            }
-            memcpy(cert->subject_pubKey->algorithmIdentifier, temp, len);
-            cert->subject_pubKey->algorithmIdentifier[len] = '\0';
+        case 23:
+            cert->tbsCert->pKeyInfo->pubKeyAlgo = malloc(len + 1);
+            memcpy(cert->tbsCert->pKeyInfo->pubKeyAlgo, temp, len);
+            cert->tbsCert->pKeyInfo->pubKeyAlgo[len] = '\0';
             break;
-        case 23 :
-            cert->subject_pubKey->keyBit = deserialize_int(temp, len);
+        case 24:
+            mpz_import(cert->tbsCert->pKeyInfo->pubKey->n, len, 1, 1, 0, 0, temp);
             break;
-        case 24 :
-            mpz_init(cert->subject_pubKey->modulus);
-            mpz_import(cert->subject_pubKey->modulus, len, 1, 1, 0, 0, temp);
-            break;
-        case 25 :
-            mpz_init(cert->subject_pubKey->exponent);
-            mpz_import(cert->subject_pubKey->exponent, len, 1, 1, 0, 0, temp);
+        case 25:
+            mpz_import(cert->tbsCert->pKeyInfo->pubKey->e, len, 1, 1, 0, 0, temp);
             break;
 
         // Signature
-        case 26 :
-            cert->signature = (Signature *)malloc(sizeof(Signature));
-            if(!cert->signature){
-                perror("Memory allocation failed for Signature");
-                exit(EXIT_FAILURE);
-            }
-            memcpy(cert->signature->algorithmIdentifier, temp, len);
-            cert->signature->algorithmIdentifier[len] = '\0';
+        case 26:
+            cert->signatureAlgo = malloc(len + 1);
+            memcpy(cert->signatureAlgo, temp, len);
+            cert->signatureAlgo[len] = '\0';
             break;
 
         case 27:
-            mpz_init(cert->signature->value);
-            mpz_import(cert->signature->value, len, 1, 1, 0, 0, temp);
+            mpz_import(cert->signature, len, 1, 1, 0, 0, temp);
             break;
 
     }
@@ -279,9 +253,8 @@ Certificate *load_certificate(const char *filename){
         return NULL;
     }
     
-    Certificate *cert = (Certificate *)malloc(sizeof(Certificate));
+    Certificate *cert = init_certificate();
     if(!cert){
-        perror("Memory allocation failed");
         fclose(fptr);
         return NULL;
     }
@@ -319,7 +292,7 @@ void csr_cer2txt(const char *filename){
         return;
     }
 
-    FILE *output = fopen("../data/csr.txt", "w");
+    FILE *output = fopen(DATA_DIR "/csr.txt", "w");
     if(!output){
         perror("Error opening output file");
         fclose(input);
@@ -339,7 +312,7 @@ void csr_cer2txt(const char *filename){
         "\tSignature Algorithm: ",
         "\tSignature Value:\n\t\t"
     };
-    const char *labels[] = {"C=", "ST=", "L=", "O=", "CN="};    // Labels for subject info
+    const char *labels[] = {"C=", "ST=", "L=", "O=", "OU=", "CN="};    // Labels for subject info
 
 
     fprintf(output, "%s%s", headers[0], headers[1]);
@@ -385,21 +358,21 @@ void csr_cer2txt(const char *filename){
             case 2:   // Subject - State
             case 3:   // Subject - Locality
             case 4:   // Subject - Organization
-            case 5: { // Subject - Common Name
-                fprintf(output, "%s%s%s", labels[section - 1], buffer, (section == 5) ? "\n" : ", ");
+            case 5:   // Subject - Organization Unit
+            case 6: { // Subject - Common Name
+                fprintf(output, "%s%s%s", labels[section - 1], buffer, (section == 6) ? "\n" : ", ");
                 break;
             }
 
-            case 6: { // Public Key Algorithm
+            case 7: { // Public Key Algorithm
                 fprintf(output, "%s%s%s\n", headers[4], headers[5], buffer);
                 break;
             }
-            case 7: { // Key Size
-                int bits = deserialize_int(buffer, len);
+            case 8: { // Key Size
+                int bits = ((buffer[0] == 0x00) ? len - 1 : len) * 8;
                 fprintf(output, "%s(%d bit)\n", headers[6], bits);
-                break;
-            }
-            case 8: { // Modulus
+                
+                // Modulus
                 fprintf(output, "%s", headers[7]);
                 for(size_t i = 0; i < len; ++i){
                     fprintf(output, "%02x", buffer[i]);
@@ -481,7 +454,7 @@ void cert_cer2txt(const char *input_file, const char *output_file){
         "\tSignature Value:\n\t\t"
     };
     const char *label1[] = {"C=", "O="};
-    const char *label2[] = {"C=", "ST=", "L=", "O=", "CN="};
+    const char *label2[] = {"C=", "ST=", "L=", "O=", "OU=", "CN="};
 
     fprintf(output, "%s%s", headers[0], headers[1]);
 
@@ -489,17 +462,12 @@ void cert_cer2txt(const char *input_file, const char *output_file){
 
     while(!feof(input)){  
         uint8_t tag;
-        if(fread(&tag, 1, 1, input) != 1)
-            break;
-
+        if(fread(&tag, 1, 1, input) != 1) break;
         size_t len = read_asn1_len(input);
 
-        if(tag == (ASN1_SEQUENCE)){
-            // Container SEQUENCE: handled recursively elsewhere or skipped
-            continue;
-        }
+        if(tag == (ASN1_SEQUENCE)) continue;
 
-        uint8_t *buffer = (uint8_t *)malloc(len + 1);
+        uint8_t *buffer = malloc(len + 1);
         if(!buffer){
             perror("Memory allocation failed");
             break;
@@ -511,7 +479,7 @@ void cert_cer2txt(const char *input_file, const char *output_file){
             break;
         }
 
-        buffer[len] = '\0'; // Safe for printable strings
+        buffer[len] = '\0';
 
         switch(section){
             case 0: { // Version
@@ -581,21 +549,21 @@ void cert_cer2txt(const char *input_file, const char *output_file){
             case 18:   // Subject - State
             case 19:   // Subject - Locality
             case 20:   // Subject - Organization
-            case 21: { // Subject - Common Name
-                fprintf(output, "%s%s%s", label2[section - 17], buffer, (section == 21) ? "\n" : ", ");
+            case 21:   // Subject - Organization Unit
+            case 22: { // Subject - Common Name
+                fprintf(output, "%s%s%s", label2[section - 17], buffer, (section == 22) ? "\n" : ", ");
                 break;
             }
 
-            case 22: { // Public Key Algorithm
+            case 23: { // Public Key Algorithm
                 fprintf(output, "%s%s%s\n", headers[10], headers[11], buffer);
                 break;
             }
-            case 23: { // Key Size
-                int bits = deserialize_int(buffer, len);
+            case 24: { // Key Size
+                int bits = ((buffer[0] == 0x00) ? len - 1 : len) * 8;
                 fprintf(output, "%s(%d bit)\n", headers[12], bits);
-                break;
-            }
-            case 24: { // Modulus
+                
+                // Modulus
                 fprintf(output, "%s", headers[13]);
                 for(size_t i = 0; i < len; ++i){
                     fprintf(output, "%02x", buffer[i]);
