@@ -4,6 +4,6 @@
 #include "config.h"
 #include "serialize.h"
 
-CSR *createCSR(PrivateKey *privateKey, Info subject_info);
+CSR *createCSR(PrivateKey *privateKey, DName *subject_info);
 
 #endif
