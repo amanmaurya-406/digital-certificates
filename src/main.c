@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "RSA_generateKey.h"
+#include "utils.h"
 #include "encodeKey.h"
 #include "createCSR.h"
 #include "cer2txt.h"
@@ -30,18 +31,20 @@ void handle_input(const char *prompt, char *buffer, size_t size){
     }
 }
 
-Info get_details(){
-    Info info = {0};
+DName *get_details(){
+    DName *dName = init_dname();
+    if(!dName){ return NULL; }
 
     printf("-----\nEnter information that will be incorporated into your certificate request.\n-----\n");
 
-    handle_input("Country Name (2 letter code) [AU]: ", info.country, sizeof(info.country));
-    handle_input("State or Province Name: ", info.state, sizeof(info.state));
-    handle_input("Locality Name: ", info.locality, sizeof(info.locality));
-    handle_input("Organization Name: ", info.organization, sizeof(info.organization));
-    handle_input("Common Name: ", info.common_name, sizeof(info.common_name));
+    handle_input("Country Name (2 letter code) [AU]: ", dName->country, sizeof(dName->country));
+    handle_input("State or Province Name: ", dName->state, sizeof(dName->state));
+    handle_input("Locality Name: ", dName->city, sizeof(dName->city));
+    handle_input("Organization Name: ", dName->org, sizeof(dName->org));
+    handle_input("Organization Unit Name: ", dName->unit, sizeof(dName->unit));
+    handle_input("Common Name: ", dName->name, sizeof(dName->name));
 
-    return info;
+    return dName;
 }
 
 
@@ -51,12 +54,12 @@ int main(){
     do{
         display();
         printf("Enter your choice: ");
-        scanf("%c", &choice);
+        scanf(" %c", &choice);
         while(getchar() != '\n');
 
         switch(choice){
             case 'G': case 'g':{    /* Generating RSA keys for subject */
-                if(generate_RSA_keys(DATA_DIR "/private.key")){
+                if(generate_RSA_key(DATA_DIR "/private.key")){
                     printf("Key generated and stored as '%s'\n", "private.key");
                 }
                 else{
@@ -66,28 +69,29 @@ int main(){
             }
 
             case 'C': case 'c':{    /* Certificate signing request */
-                PrivateKey *privateKey = load_privateKey(DATA_DIR "/private.key");
-                Info subject_info = get_details();
+                PrivateKey *privKey = d2i_RSAPrivateKey(DATA_DIR "/private.key");
+                DName *subject = get_details();
                 
-                CSR *csr = createCSR(privateKey, subject_info);
-                if(!csr){
-                    printf("Certificate signing request failed.\n");
-                    break;
-                }
+                CSR *csr = createCSR(privKey, subject);
+                if(!csr){ break; }
 
                 csr_cer2txt(DATA_DIR "/csr.cer");
 
-                free_privateKey(privateKey);
+                free_dname(subject);
+                free_privateKey(privKey);
                 free_csr(csr);
-                // privateKey = NULL, csr = NULL;
                 break;
             }
 
             case 'S': case 's':{    /* Generating self-signed CA */
-                Info caInfo = get_details();
+                DName *caInfo = get_details();
                 Certificate *ca_cert = generateCA(caInfo);
+                
                 cert_cer2txt(DATA_DIR "/ca_certificate.cer", DATA_DIR "/ca_certificate.txt");
+                
+                free_dname(caInfo);
                 free_certificate(ca_cert);
+                
                 break;
             }
 
@@ -98,7 +102,7 @@ int main(){
                     break;
                 }
                 
-                PrivateKey *ca_privKey = load_privateKey(DATA_DIR "/ca_private.key");
+                PrivateKey *ca_privKey = d2i_RSAPrivateKey(DATA_DIR "/ca_private.key");
                 if(!ca_privKey){
                     printf("Error loading CA Private Key");
                     break;
@@ -110,7 +114,7 @@ int main(){
                     break;
                 }
                 
-                Certificate *certificate = generate_certificate(csr, ca_cert->subject, ca_privKey);
+                Certificate *certificate = generate_certificate(csr, ca_cert->tbsCert->subject, ca_privKey);
                 if(!certificate){
                     printf("Error generating Certificate");
                     break;
