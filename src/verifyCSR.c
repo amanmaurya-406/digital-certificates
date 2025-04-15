@@ -1,5 +1,5 @@
 #include <stdio.h>
-#include <error.h>
+#include <errno.h>
 #include "serialize.h"
 #include "sha512.h"
 #include "RSA_cipher.h"
@@ -28,9 +28,8 @@ bool verify_CSRSignature(CSR *csr){
 
 // Public Key Verification
 bool verify_RSAPublicKey(PublicKey *publicKey){
-    if(mpz_sizeinbase(publicKey->n, 256) < 2048 / 8){ // 2048 bits
-        printf("RSA key size is too small, choose atleast 2048 bits\n");
-        // errno = ERROR_BAD_LENGTH;
+    if(mpz_sizeinbase(publicKey->n, 256) < 2048 / 8){ // 256 bytes
+        printf("Key size too small: Choose atleast 2048 bits\n");
         return 0;
     }
 
