@@ -159,7 +159,7 @@ TBSCertificate *init_tbsCertificate(){
     }
 
     tbsCert->validity = init_validity();
-    if(!tbsCert->issuer){
+    if(!tbsCert->validity){
         mpz_clear(tbsCert->serialNumber);
         free_dname(tbsCert->issuer);
         free(tbsCert);
